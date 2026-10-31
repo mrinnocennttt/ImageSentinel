@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ImageSentinel - OSINT Image Privacy & Metadata Analysis</title>
+    <meta name="description" content="Local OSINT-based Image Privacy Risk Analyzer. Extract EXIF, GPS, IPTC, XMP metadata, perform local visual privacy analysis, sanitize files, and generate forensic PDF reports.">
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Leaflet CSS for interactive location maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0b1120; /* Dark Slate Navy */
+            color: #f8fafc;
+        }
+        .console-font {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .panel {
+            background-color: #131c31;
+            border: 1px solid #1e293b;
+        }
+        .panel-glow:hover {
+            border-color: rgba(6, 182, 212, 0.4);
+            box-shadow: 0 0 20px rgba(6, 182, 212, 0.1);
+        }
+        .glow-red { box-shadow: 0 0 20px rgba(239, 68, 68, 0.35); }
+        .glow-cyan { box-shadow: 0 0 20px rgba(6, 182, 212, 0.35); }
+        .glow-emerald { box-shadow: 0 0 20px rgba(16, 185, 129, 0.35); }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0b1120; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+        #leafletMap { height: 260px; border-radius: 0.5rem; z-index: 1; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col relative overflow-x-hidden">
+    <!-- Grid Overlay Background -->
+    <div class="fixed inset-0 z-[-1] bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PGRlZnM+PHBhdHRlcm4gaWQ9ImdyaWQiIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCIgcGF0dGVyblVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+PHBhdGggZD0iTSAwIDQwIEwgNDAgNDAgTCA0MCAwIiBmaWxsPSJub25lIiBzdHJva2U9IiMxZTI5M2IiIHN0cm9rZS13aWR0aD0iMC41Ii8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-40 pointer-events-none"></div>
+
+    <!-- Header -->
+    <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur-md sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-lg bg-cyan-500/20 flex items-center justify-center border border-cyan-500/50 shadow-[0_0_12px_rgba(6,182,212,0.3)]">
+                    <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold tracking-wider text-slate-100 flex items-center gap-1.5">
+                        IMAGE<span class="text-cyan-400">SENTINEL</span>
+                        <span class="text-[10px] console-font px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-400 border border-cyan-800">OSINT v2.0</span>
+                    </h1>
+                    <p class="text-[11px] text-slate-400">Local Image Privacy & Forensic Risk Analysis Engine</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-4 text-xs console-font">
+                <div class="hidden sm:flex items-center gap-2 bg-slate-800/80 px-3 py-1.5 rounded-md border border-slate-700 text-slate-300">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span>ENGINE: <span class="text-emerald-400 font-semibold">100% LOCAL / OFFLINE</span></span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 flex flex-col gap-8">
+
+        <!-- Upload Target Image Section -->
+        <section id="uploadSection" class="panel rounded-xl p-8 text-center border-dashed border-2 border-slate-700 hover:border-cyan-500/60 transition-all duration-300 relative overflow-hidden group panel-glow">
+            <div class="absolute inset-0 bg-gradient-to-b from-cyan-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+            <input type="file" id="fileInput" class="hidden" accept=".jpg,.jpeg,.png,.webp,.tiff,.tif" />
+            <div class="relative z-10 max-w-xl mx-auto">
+                <div class="w-16 h-16 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mx-auto mb-4 group-hover:scale-105 group-hover:border-cyan-400 transition-all">
+                    <svg class="h-8 w-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                    </svg>
+                </div>
+                <h2 class="text-xl font-bold text-slate-100 mb-2">Upload Target Image for OSINT Privacy Audit</h2>
+                <p class="text-sm text-slate-400 mb-6 leading-relaxed">
+                    Select a <span class="text-cyan-300 font-medium">JPG, PNG, WEBP, or TIFF</span> file. ImageSentinel performs forensic EXIF header parsing, GPS triangulation, IPTC/XMP extraction, and local computer vision privacy analysis.
+                </p>
+                <div class="flex flex-wrap justify-center gap-3">
+                    <button id="btnSelectFile" onclick="document.getElementById('fileInput').click()" class="bg-cyan-600 hover:bg-cyan-500 text-white px-7 py-2.5 rounded-lg font-semibold tracking-wide transition-all shadow-[0_0_20px_rgba(8,145,178,0.4)] flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                        SELECT IMAGE FILE
+                    </button>
+                </div>
+                <p class="text-[11px] text-slate-500 console-font mt-4">
+                    🔒 Zero Cloud Leaks: Files remain on your machine and are analyzed strictly via local Python modules.
+                </p>
+            </div>
+        </section>
+
+        <!-- Loading Analysis State -->
+        <div id="loading" class="hidden text-center py-12 panel rounded-xl">
+            <div class="relative w-16 h-16 mx-auto mb-4">
+                <svg class="animate-spin h-16 w-16 text-cyan-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle>
+                    <path class="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </div>
+            <p class="text-cyan-400 console-font font-bold tracking-wider text-sm animate-pulse mb-1">ANALYZING TARGET FOR PRIVACY LEAKS...</p>
+            <p class="text-xs text-slate-500 console-font">Extracting EXIF &bull; Resolving GPS &bull; Parsing IPTC/XMP &bull; Executing Local CV &bull; Compiling PDF</p>
+        </div>
+
+        <!-- Results Section (Visible after upload) -->
+        <div id="resultsSection" class="hidden flex flex-col gap-8">
+
+            <!-- Summary Exposure Matrix Banner -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div class="panel rounded-xl p-4 flex items-center justify-between border-l-4 border-cyan-500">
+                    <div>
+                        <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Metadata Privacy</div>
+                        <div id="metaPrivacyBadge" class="text-xl font-bold console-font text-cyan-400 mt-1">LOW</div>
+                    </div>
+                    <div class="w-10 h-10 rounded-lg bg-cyan-500/10 flex items-center justify-center text-cyan-400">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    </div>
+                </div>
+
+                <div class="panel rounded-xl p-4 flex items-center justify-between border-l-4 border-indigo-500">
+                    <div>
+                        <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Visual Privacy</div>
+                        <div id="visPrivacyBadge" class="text-xl font-bold console-font text-indigo-400 mt-1">LOW</div>
+                    </div>
+                    <div class="w-10 h-10 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                    </div>
+                </div>
+
+                <div class="panel rounded-xl p-4 flex items-center justify-between border-l-4 border-amber-500">
+                    <div>
+                        <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Overall Risk Score</div>
+                        <div id="overallScoreBadge" class="text-xl font-bold console-font text-amber-400 mt-1">0 / 100</div>
+                    </div>
+                    <div class="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-400">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    </div>
+                </div>
+
+                <div class="panel rounded-xl p-4 flex items-center justify-between border-l-4 border-emerald-500">
+                    <div>
+                        <div class="text-[11px] text-slate-400 uppercase tracking-wider font-semibold">Active Vectors</div>
+                        <div id="activeVectorsCount" class="text-xl font-bold console-font text-emerald-400 mt-1">0 Findings</div>
+                    </div>
+                    <div class="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Top Grid: Target Preview & Privacy Risk Engine -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Image Preview Card -->
+                <div class="panel rounded-xl p-5 col-span-1 flex flex-col justify-between">
+                    <div>
+                        <div class="flex justify-between items-center mb-3 border-b border-slate-800 pb-2">
+                            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Target Preview</h3>
+                            <span id="imageFormatBadge" class="text-[10px] console-font px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">JPEG</span>
+                        </div>
+                        <div class="bg-slate-950/70 rounded-lg border border-slate-800 overflow-hidden flex items-center justify-center min-h-[260px] max-h-[340px] relative p-2">
+                            <img id="imagePreview" src="" alt="Target Image" class="max-h-[300px] object-contain rounded" />
+                        </div>
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-slate-800/80 space-y-1.5 text-xs console-font text-slate-400">
+                        <div class="flex justify-between">
+                            <span>File:</span>
+                            <span id="previewFilename" class="text-slate-200 font-semibold truncate max-w-[180px]">image.jpg</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Dimensions:</span>
+                            <span id="previewDimensions" class="text-slate-200">0 x 0 px</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Size:</span>
+                            <span id="previewSize" class="text-slate-200">0 KB</span>
+                        </div>
+                        <div class="truncate text-[11px] text-slate-500 pt-1" id="fileHash" title="">
+                            SHA-256: ...
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Risk Score Card -->
+                <div class="panel rounded-xl p-6 col-span-1 lg:col-span-2 flex flex-col justify-between">
+                    <div>
+                        <div class="flex justify-between items-center mb-4 border-b border-slate-800 pb-2">
+                            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">OSINT Privacy Risk Engine</h3>
+                            <span id="scoreTypeIndicator" class="text-[11px] console-font text-cyan-400">Rule-Based Impact Engine</span>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+                            <!-- Score Display -->
+                            <div class="flex items-center gap-6 p-4 rounded-xl bg-slate-950/50 border border-slate-800">
+                                <div class="text-center">
+                                    <div class="text-6xl font-black console-font mb-1 tracking-tight" id="riskScore">0</div>
+                                    <div class="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">Score / 100</div>
+                                </div>
+                                <div class="w-px h-20 bg-slate-800"></div>
+                                <div>
+                                    <div class="text-2xl font-black tracking-widest mb-1" id="riskLevel">LOW</div>
+                                    <p class="text-xs text-slate-400 leading-relaxed" id="riskDesc">Analyzing exposure...</p>
+                                </div>
+                            </div>
+
+                            <!-- "Why this score?" breakdown list -->
+                            <div class="p-3.5 rounded-xl bg-slate-950/30 border border-slate-800/80">
+                                <h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                    <svg class="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                    Why this score? (Score Breakdown)
+                                </h4>
+                                <div id="whyThisScoreList" class="space-y-1.5 max-h-[140px] overflow-y-auto pr-1 text-xs">
+                                    <!-- Injected via JS -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Bar -->
+                    <div class="mt-6 flex flex-wrap justify-between items-center gap-3 border-t border-slate-800 pt-4">
+                        <div class="text-xs text-slate-400 flex items-center gap-2">
+                            <span>Target Status:</span>
+                            <span id="targetStatusText" class="text-emerald-400 font-semibold">Analyzed</span>
+                        </div>
+                        <div class="flex flex-wrap gap-2.5">
+                            <!-- Download PDF -->
+                            <a id="btnPdfReport" href="#" target="_blank" class="px-4 py-2 bg-cyan-700 hover:bg-cyan-600 text-white rounded-lg text-xs font-semibold tracking-wide transition-all shadow-[0_0_12px_rgba(8,145,178,0.3)] flex items-center gap-1.5">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                Download PDF Report
+                            </a>
+                            <!-- Download JSON -->
+                            <a id="btnJsonReport" href="#" target="_blank" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-semibold tracking-wide transition-all flex items-center gap-1.5">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+                                JSON Report
+                            </a>
+                            <!-- Sanitize File -->
+                            <button id="btnSanitize" onclick="sanitizeTarget()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold tracking-wide transition-all shadow-[0_0_12px_rgba(16,185,129,0.3)] flex items-center gap-1.5">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                Sanitize File
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- GPS / Location Intelligence Section -->
+            <div id="gpsSection" class="panel rounded-xl p-6 flex flex-col gap-4">
+                <div class="flex flex-wrap justify-between items-center border-b border-slate-800 pb-3">
+                    <div class="flex items-center gap-2">
+                        <div class="w-7 h-7 rounded bg-cyan-500/20 flex items-center justify-center text-cyan-400">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                        </div>
+                        <h3 class="text-sm font-bold text-slate-200 uppercase tracking-wider">GPS & Location Intelligence</h3>
+                    </div>
+                    <div id="gpsStatusBadge" class="text-xs console-font font-bold px-2.5 py-1 rounded bg-slate-800 text-slate-400">
+                        Scanning...
+                    </div>
+                </div>
+
+                <!-- GPS Warning Banner (Visible if GPS detected) -->
+                <div id="gpsAlertBanner" class="hidden rounded-lg p-4 bg-red-950/40 border border-red-500/80 flex items-start gap-3">
+                    <div class="text-red-400 font-black text-lg leading-none mt-0.5">⚠️</div>
+                    <div>
+                        <h4 class="text-sm font-black tracking-wider text-red-400 uppercase">GPS LOCATION EXPOSED</h4>
+                        <p class="text-xs text-red-200 mt-0.5 leading-relaxed">
+                            Geographic coordinates are embedded directly in this image's headers. Anyone who downloads or views the file can determine where it was captured.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- GPS Info Grid -->
+                <div id="gpsDataContainer" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="space-y-3">
+                        <div class="grid grid-cols-2 gap-3 text-xs">
+                            <div class="p-3 bg-slate-950/50 rounded-lg border border-slate-800">
+                                <span class="text-slate-500 block mb-0.5">Latitude (Decimal)</span>
+                                <span id="gpsLat" class="console-font text-slate-200 font-bold">Not found</span>
+                            </div>
+                            <div class="p-3 bg-slate-950/50 rounded-lg border border-slate-800">
+                                <span class="text-slate-500 block mb-0.5">Longitude (Decimal)</span>
+                                <span id="gpsLon" class="console-font text-slate-200 font-bold">Not found</span>
+                            </div>
+                            <div class="p-3 bg-slate-950/50 rounded-lg border border-slate-800">
+                                <span class="text-slate-500 block mb-0.5">Latitude (DMS)</span>
+                                <span id="gpsLatDms" class="console-font text-slate-200">Not found</span>
+                            </div>
+                            <div class="p-3 bg-slate-950/50 rounded-lg border border-slate-800">
+                                <span class="text-slate-500 block mb-0.5">Longitude (DMS)</span>
+                                <span id="gpsLonDms" class="console-font text-slate-200">Not found</span>
+                            </div>
+                        </div>
+
+                        <div class="p-3.5 bg-slate-950/50 rounded-lg border border-slate-800 space-y-2 text-xs">
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">Altitude:</span>
+                                <span id="gpsAltitude" class="console-font text-slate-200">Not found</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-400">Location Precision:</span>
+                                <span id="gpsPrecision" class="console-font text-cyan-400 font-medium">Precision undetermined</span>
+                            </div>
+                            <div class="flex flex-col gap-0.5 pt-1 border-t border-slate-800/80">
+                                <span class="text-slate-400">Local Offline Reference:</span>
+                                <span id="gpsNearest" class="text-slate-200 font-medium">None</span>
+                                <span class="text-[10px] text-slate-500 italic">Offline reference estimate only. No external map APIs called during backend analysis.</span>
+                            </div>
+                        </div>
+
+                        <!-- Open Location Buttons -->
+                        <div id="gpsActionLinks" class="flex flex-wrap gap-2.5 pt-1">
+                            <a id="btnGmaps" href="#" target="_blank" class="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-700 rounded-md text-xs font-semibold console-font transition-all flex items-center gap-1.5">
+                                Google Maps &rarr;
+                            </a>
+                            <a id="btnOsm" href="#" target="_blank" class="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-700 rounded-md text-xs font-semibold console-font transition-all flex items-center gap-1.5">
+                                OpenStreetMap &rarr;
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Interactive Map Container -->
+                    <div class="flex flex-col">
+                        <div id="leafletMap" class="w-full bg-slate-950 border border-slate-800 rounded-lg"></div>
+                        <div id="mapFallbackNote" class="text-[11px] text-slate-500 console-font mt-2 text-center">
+                            OpenStreetMap Leaflet Interactive View
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Missing GPS State Message -->
+                <div id="gpsMissingContainer" class="hidden p-5 rounded-lg bg-slate-950/40 border border-slate-800/80 text-center">
+                    <div class="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 mx-auto mb-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+                    </div>
+                    <h4 class="text-sm font-bold text-slate-300">GPS coordinates not found</h4>
+                    <p class="text-xs text-slate-400 mt-1 max-w-lg mx-auto">
+                        This image does not contain readable GPS metadata. This does not guarantee that the image is visually privacy-safe.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Visual Privacy Analysis Section -->
+            <div id="visualSection" class="panel rounded-xl p-6 flex flex-col gap-4">
+                <div class="flex flex-wrap justify-between items-center border-b border-slate-800 pb-3">
+                    <div class="flex items-center gap-2">
+                        <div class="w-7 h-7 rounded bg-indigo-500/20 flex items-center justify-center text-indigo-400">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                        </div>
+                        <h3 class="text-sm font-bold text-slate-200 uppercase tracking-wider">Visual Privacy Analysis</h3>
+                    </div>
+                    <span id="visualStatusBadge" class="text-xs console-font font-bold px-2.5 py-1 rounded bg-slate-800 text-slate-400">
+                        Local CV Engine
+                    </span>
+                </div>
+
+                <div id="visualStatusMsg" class="text-xs text-slate-400 italic"></div>
+
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <!-- Faces -->
+                    <div class="p-4 rounded-xl bg-slate-950/50 border border-slate-800">
+                        <div class="flex justify-between items-start mb-2">
+                            <span class="text-xs text-slate-400 font-medium">Face Detection</span>
+                            <span id="faceCountBadge" class="text-xs console-font px-2 py-0.5 rounded bg-slate-800 text-slate-300">0</span>
+                        </div>
+                        <div id="faceStatusText" class="text-xs text-slate-300 font-semibold">No faces detected</div>
+                        <p class="text-[11px] text-slate-500 mt-1">Counts facial presence only; facial recognition/identity is never performed.</p>
+                    </div>
+
+                    <!-- QR Codes -->
+                    <div class="p-4 rounded-xl bg-slate-950/50 border border-slate-800">
+                        <div class="flex justify-between items-start mb-2">
+                            <span class="text-xs text-slate-400 font-medium">QR Codes</span>
+                            <span id="qrCountBadge" class="text-xs console-font px-2 py-0.5 rounded bg-slate-800 text-slate-300">0</span>
+                        </div>
+                        <div id="qrStatusText" class="text-xs text-slate-300 font-semibold">None detected</div>
+                        <p class="text-[11px] text-slate-500 mt-1">Scans for encoded URLs/data. Payloads are sanitized and never auto-opened.</p>
+                    </div>
+
+                    <!-- Barcodes -->
+                    <div class="p-4 rounded-xl bg-slate-950/50 border border-slate-800">
+                        <div class="flex justify-between items-start mb-2">
+                            <span class="text-xs text-slate-400 font-medium">Barcodes</span>
+                            <span id="barcodeCountBadge" class="text-xs console-font px-2 py-0.5 rounded bg-slate-800 text-slate-300">0</span>
+                        </div>
+                        <div id="barcodeStatusText" class="text-xs text-slate-300 font-semibold">None detected</div>
+                        <p class="text-[11px] text-slate-500 mt-1">Detects commercial/tracking barcodes to prevent serial leaks.</p>
+                    </div>
+
+                    <!-- Optical Text -->
+                    <div class="p-4 rounded-xl bg-slate-950/50 border border-slate-800">
+                        <div class="flex justify-between items-start mb-2">
+                            <span class="text-xs text-slate-400 font-medium">Optical Text / OCR</span>
+                            <span id="ocrCountBadge" class="text-xs console-font px-2 py-0.5 rounded bg-slate-800 text-slate-300">Scanned</span>
+                        </div>
+                        <div id="ocrStatusText" class="text-xs text-slate-300 font-semibold truncate">None detected</div>
+                        <p class="text-[11px] text-slate-500 mt-1">Locates candidate text regions and high-confidence strings.</p>
+                    </div>
+                </div>
+
+                <!-- Decoded Payloads List (if any) -->
+                <div id="visualPayloadsBox" class="hidden p-3.5 rounded-lg bg-slate-950/60 border border-slate-800 text-xs">
+                    <h5 class="text-slate-400 font-bold mb-1.5 uppercase tracking-wider text-[11px]">Decoded Visual Payloads:</h5>
+                    <div id="visualPayloadsList" class="space-y-1 console-font text-slate-200"></div>
+                </div>
+            </div>
+
+            <!-- Identified Metadata Vectors & Findings Table -->
+            <div class="panel rounded-xl overflow-hidden">
+                <div class="p-5 border-b border-slate-800 bg-slate-900/60 flex justify-between items-center">
+                    <div>
+                        <h3 class="text-sm font-bold text-slate-200 uppercase tracking-wider">Identified Metadata & Forensic Findings</h3>
+                        <p class="text-xs text-slate-400 mt-0.5">Itemized risk analysis with severity ratings, point contributions, and remediation steps</p>
+                    </div>
+                    <span id="findingsCount" class="bg-cyan-950 text-cyan-400 border border-cyan-800 text-xs px-2.5 py-1 rounded font-bold console-font">0 Findings</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-950/60 text-xs uppercase tracking-wider text-slate-400 border-b border-slate-800">
+                                <th class="p-4 font-semibold">Category</th>
+                                <th class="p-4 font-semibold">Extracted Value</th>
+                                <th class="p-4 font-semibold">Severity</th>
+                                <th class="p-4 font-semibold">Risk Exposure & Recommended Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="findingsTableBody" class="text-sm divide-y divide-slate-800/80">
+                            <!-- Injected via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Comprehensive Metadata Inspector Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <!-- Camera & Hardware -->
+                <div class="panel rounded-xl p-4 flex flex-col justify-between">
+                    <div>
+                        <h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider border-b border-slate-800 pb-2 mb-3 flex items-center gap-1.5">
+                            <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path></svg>
+                            Camera & Hardware
+                        </h4>
+                        <div class="space-y-2 text-xs">
+                            <div><span class="text-slate-500 block">Make / Model:</span><span id="metaMakeModel" class="text-slate-200 font-medium">Not found</span></div>
+                            <div><span class="text-slate-500 block">Lens:</span><span id="metaLens" class="text-slate-200">Not found</span></div>
+                            <div><span class="text-slate-500 block">Serial Number:</span><span id="metaSerial" class="text-slate-200 console-font">Not found</span></div>
+                            <div><span class="text-slate-500 block">Software Tool:</span><span id="metaSoftware" class="text-slate-200">Not found</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Date & Timestamp -->
+                <div class="panel rounded-xl p-4 flex flex-col justify-between">
+                    <div>
+                        <h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider border-b border-slate-800 pb-2 mb-3 flex items-center gap-1.5">
+                            <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            Capture Timestamps
+                        </h4>
+                        <div class="space-y-2 text-xs">
+                            <div><span class="text-slate-500 block">Captured Date:</span><span id="metaDateOriginal" class="text-slate-200 console-font">Not found</span></div>
+                            <div><span class="text-slate-500 block">Digitized Date:</span><span id="metaDateDigitized" class="text-slate-200 console-font">Not found</span></div>
+                            <div><span class="text-slate-500 block">File Modified:</span><span id="metaDateModified" class="text-slate-200 console-font">Not found</span></div>
+                            <div><span class="text-slate-500 block">Timezone Offset:</span><span id="metaTimezone" class="text-slate-200 console-font">Not found</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Identity & IPTC -->
+                <div class="panel rounded-xl p-4 flex flex-col justify-between">
+                    <div>
+                        <h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider border-b border-slate-800 pb-2 mb-3 flex items-center gap-1.5">
+                            <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                            Identity & IPTC
+                        </h4>
+                        <div class="space-y-2 text-xs">
+                            <div><span class="text-slate-500 block">Author / Artist:</span><span id="metaAuthor" class="text-slate-200 font-medium">Not found</span></div>
+                            <div><span class="text-slate-500 block">Copyright Notice:</span><span id="metaCopyright" class="text-slate-200">Not found</span></div>
+                            <div><span class="text-slate-500 block">IPTC Location:</span><span id="metaIptcLocation" class="text-slate-200">Not found</span></div>
+                            <div><span class="text-slate-500 block">Caption / Credit:</span><span id="metaCaption" class="text-slate-200">Not found</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Exposure & Technical -->
+                <div class="panel rounded-xl p-4 flex flex-col justify-between">
+                    <div>
+                        <h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider border-b border-slate-800 pb-2 mb-3 flex items-center gap-1.5">
+                            <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path></svg>
+                            Exposure & XMP
+                        </h4>
+                        <div class="space-y-2 text-xs">
+                            <div><span class="text-slate-500 block">Exposure / ISO:</span><span id="metaExposure" class="text-slate-200">Not found</span></div>
+                            <div><span class="text-slate-500 block">Focal Length:</span><span id="metaFocal" class="text-slate-200">Not found</span></div>
+                            <div><span class="text-slate-500 block">Orientation:</span><span id="metaOrientation" class="text-slate-200">Not found</span></div>
+                            <div><span class="text-slate-500 block">XMP Document ID:</span><span id="metaXmpDocId" class="text-slate-200 console-font truncate block">Not found</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actionable Recommendations Card -->
+            <div class="panel rounded-xl p-6">
+                <h3 class="text-sm font-bold text-slate-200 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Actionable Privacy Recommendations
+                </h3>
+                <ul id="recommendationsList" class="space-y-2 text-xs text-slate-300">
+                    <!-- Injected via JS -->
+                </ul>
+            </div>
+
+        </div>
+
+        <!-- Sanitize Comparison Section (Visible after sanitization) -->
+        <div id="compareSection" class="hidden flex flex-col gap-6">
+            <div class="panel rounded-xl p-6 border-l-4 border-emerald-500">
+                <div class="flex flex-wrap justify-between items-center border-b border-slate-800 pb-3 mb-4">
+                    <h2 class="text-lg font-bold text-emerald-400 flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        Sanitization & Forensic Metadata Stripping Completed
+                    </h2>
+                    <span class="text-xs console-font px-2.5 py-1 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">
+                        ORIGINAL PRESERVED &bull; NEW CLEAN COPY GENERATED
+                    </span>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Original -->
+                    <div class="p-4 rounded-xl bg-slate-950/60 border border-red-900/40">
+                        <div class="flex justify-between items-center mb-3">
+                            <span class="text-xs font-bold text-red-400 uppercase tracking-wider">Before (Original Image)</span>
+                            <span id="compOrigScoreBadge" class="text-xs console-font font-bold px-2 py-0.5 rounded bg-red-950 text-red-400">Score: 95</span>
+                        </div>
+                        <div class="space-y-2 text-xs console-font text-slate-300">
+                            <div><span class="text-slate-500">Findings:</span> <span id="compOrigCount" class="font-bold">7</span></div>
+                            <div class="truncate"><span class="text-slate-500">SHA-256:</span> <span id="compOrigSha" class="text-slate-400">...</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Cleaned -->
+                    <div class="p-4 rounded-xl bg-slate-950/60 border border-emerald-900/40">
+                        <div class="flex justify-between items-center mb-3">
+                            <span class="text-xs font-bold text-emerald-400 uppercase tracking-wider">After (Sanitized Copy)</span>
+                            <span id="compCleanScoreBadge" class="text-xs console-font font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-400">Score: 0</span>
+                        </div>
+                        <div class="space-y-2 text-xs console-font text-slate-300">
+                            <div><span class="text-slate-500">Findings:</span> <span id="compCleanCount" class="font-bold text-emerald-400">0</span></div>
+                            <div class="truncate"><span class="text-slate-500">SHA-256:</span> <span id="compCleanSha" class="text-slate-400">...</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Removed Metadata Fields List -->
+                <div class="mt-4 pt-3 border-t border-slate-800">
+                    <h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Metadata Removed from File Headers:</h4>
+                    <div id="removedFieldsList" class="flex flex-wrap gap-2 text-xs console-font"></div>
+                </div>
+
+                <!-- Privacy Disclaimer -->
+                <div class="mt-4 p-3 rounded-lg bg-amber-950/20 border border-amber-800/40 text-xs text-amber-300/90 leading-relaxed">
+                    <strong>Notice:</strong> Technical metadata headers (EXIF, IPTC, XMP, MakerNotes) have been scrubbed. Sanitization does not alter visual pixels; visual features (such as faces, readable signage, and QR codes) remain in the image.
+                </div>
+
+                <!-- Download Clean Image -->
+                <div class="flex flex-wrap justify-end gap-3 mt-4 pt-3 border-t border-slate-800">
+                    <a id="btnDownloadClean" href="#" download class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold tracking-wide transition-all shadow-[0_0_15px_rgba(16,185,129,0.3)] flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        Download Cleaned Image
+                    </a>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-800 mt-auto py-5 text-center text-xs text-slate-500 console-font">
+        ImageSentinel OSINT Privacy Analyzer &copy; 2026 | Local Forensic Inspection Engine
+    </footer>
+
+    <!-- Frontend Controller Script -->
+    <script>
+        let currentFilename = '';
+        let leafletMapInstance = null;
+        let leafletMarkerInstance = null;
+
+        document.getElementById('fileInput').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // Reset UI states
+            document.getElementById('resultsSection').classList.add('hidden');
+            document.getElementById('compareSection').classList.add('hidden');
+            document.getElementById('loading').classList.remove('hidden');
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                
+                if (data.error) {
+                    alert('Analysis error: ' + data.error);
+                    return;
+                }
+
+                currentFilename = data.filename;
+                updateDashboard(data);
+                
+            } catch (err) {
+                alert('Analysis request failed: ' + err.message);
+            } finally {
+                document.getElementById('loading').classList.add('hidden');
+            }
+        });
+
+        function updateDashboard(data) {
+            document.getElementById('resultsSection').classList.remove('hidden');
+
+            const metadata = data.metadata || {};
+            const risk = data.risk || {};
+            const visual = data.visual || {};
+            const basic = metadata.basic_info || {};
+            const fileInfo = metadata.file_info || {};
+            const norm = metadata.normalized_exif || {};
+            const gps = metadata.gps || {};
+            const summaryFields = metadata.summary_fields || {};
+
+            // 1. Preview Info
+            document.getElementById('imagePreview').src = '/images/' + data.filename;
+            document.getElementById('previewFilename').innerText = data.filename;
+            document.getElementById('previewDimensions').innerText = `${basic.width || 0} x ${basic.height || 0} px`;
+            document.getElementById('previewSize').innerText = fileInfo.file_size_formatted || 'Unknown';
+            document.getElementById('imageFormatBadge').innerText = basic.format || 'IMAGE';
+            
+            const hash = fileInfo.sha256 || 'Unknown';
+            const hashEl = document.getElementById('fileHash');
+            hashEl.innerText = 'SHA-256: ' + hash.substring(0, 24) + '...';
+            hashEl.title = hash;
+
+            // 2. Risk Score & Summary Badges
+            const score = risk.score || 0;
+            const level = risk.level || 'LOW';
+            const scoreEl = document.getElementById('riskScore');
+            const levelEl = document.getElementById('riskLevel');
+            const descEl = document.getElementById('riskDesc');
+
+            scoreEl.innerText = score;
+            levelEl.innerText = level;
+            descEl.innerText = risk.summary_text || 'OSINT privacy assessment calculated.';
+
+            // Color classes
+            scoreEl.className = 'text-6xl font-black console-font mb-1 tracking-tight';
+            levelEl.className = 'text-2xl font-black tracking-widest mb-1';
+
+            if (level === 'LOW') {
+                scoreEl.classList.add('text-emerald-400');
+                levelEl.classList.add('text-emerald-400');
+            } else if (level === 'MEDIUM') {
+                scoreEl.classList.add('text-yellow-400');
+                levelEl.classList.add('text-yellow-400');
+            } else if (level === 'HIGH') {
+                scoreEl.classList.add('text-orange-400');
+                levelEl.classList.add('text-orange-400');
+            } else {
+                scoreEl.classList.add('text-red-500');
+                levelEl.classList.add('text-red-500');
+            }
+
+            // Summary Badges
+            document.getElementById('metaPrivacyBadge').innerText = risk.metadata_level || 'LOW';
+            document.getElementById('visPrivacyBadge').innerText = risk.visual_level || 'LOW';
+            document.getElementById('overallScoreBadge').innerText = `${score} / 100`;
+            document.getElementById('activeVectorsCount').innerText = `${(risk.findings || []).length} Findings`;
+
+            // "Why this score?" Breakdown
+            const whyList = document.getElementById('whyThisScoreList');
+            whyList.innerHTML = '';
+            const breakdown = risk.why_this_score || risk.score_breakdown || [];
+            if (breakdown.length === 0) {
+                whyList.innerHTML = '<div class="text-slate-500 italic">No positive risk points added. File has no detected metadata vectors.</div>';
+            } else {
+                breakdown.forEach(item => {
+                    let ptsClass = 'text-slate-400';
+                    if (item.points >= 30) ptsClass = 'text-red-400 font-bold';
+                    else if (item.points >= 15) ptsClass = 'text-orange-400 font-bold';
+                    else if (item.points >= 10) ptsClass = 'text-yellow-400';
+
+                    whyList.innerHTML += `
+                        <div class="flex justify-between items-center py-0.5 border-b border-slate-900">
+                            <span class="text-slate-300 truncate max-w-[200px]" title="${item.factor}">${item.factor}</span>
+                            <span class="console-font ${ptsClass}">${item.contribution}</span>
+                        </div>
+                    `;
+                });
+            }
+
+            // Report Download Links
+            if (data.json_report) {
+                document.getElementById('btnJsonReport').href = data.json_report;
+            }
+            if (data.pdf_report) {
+                document.getElementById('btnPdfReport').href = data.pdf_report;
+            }
+
+            // 3. GPS & Location Intelligence
+            const hasGps = gps.has_gps && gps.coordinates;
+            const gpsAlert = document.getElementById('gpsAlertBanner');
+            const gpsDataBox = document.getElementById('gpsDataContainer');
+            const gpsMissingBox = document.getElementById('gpsMissingContainer');
+            const gpsStatusBadge = document.getElementById('gpsStatusBadge');
+
+            if (hasGps) {
+                gpsAlert.classList.remove('hidden');
+                gpsDataBox.classList.remove('hidden');
+                gpsMissingBox.classList.add('hidden');
+                gpsStatusBadge.className = 'text-xs console-font font-bold px-2.5 py-1 rounded bg-red-950 text-red-400 border border-red-800';
+                gpsStatusBadge.innerText = 'EXPOSED';
+
+                const lat = gps.coordinates.latitude;
+                const lon = gps.coordinates.longitude;
+
+                document.getElementById('gpsLat').innerText = lat.toFixed(6);
+                document.getElementById('gpsLon').innerText = lon.toFixed(6);
+                document.getElementById('gpsLatDms').innerText = gps.latitude_dms || 'Not found';
+                document.getElementById('gpsLonDms').innerText = gps.longitude_dms || 'Not found';
+                document.getElementById('gpsAltitude').innerText = gps.altitude || 'Not found';
+                document.getElementById('gpsPrecision').innerText = gps.precision || 'Precision undetermined';
+                
+                const nearest = gps.nearest_reference;
+                document.getElementById('gpsNearest').innerText = nearest ? nearest.readable_location : 'Nearest offline reference unavailable';
+
+                // Map Links
+                const gmapsUrl = gps.map_links?.google_maps || `https://www.google.com/maps?q=${lat},${lon}`;
+                const osmUrl = gps.map_links?.openstreetmap || `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}`;
+                document.getElementById('btnGmaps').href = gmapsUrl;
+                document.getElementById('btnOsm').href = osmUrl;
+
+                // Interactive Leaflet Map Init
+                initOrUpdateMap(lat, lon);
+
+            } else {
+                gpsAlert.classList.add('hidden');
+                gpsDataBox.classList.add('hidden');
+                gpsMissingBox.classList.remove('hidden');
+                gpsStatusBadge.className = 'text-xs console-font font-bold px-2.5 py-1 rounded bg-slate-800 text-slate-400';
+                gpsStatusBadge.innerText = 'NOT FOUND';
+            }
+
+            // 4. Visual Privacy Card
+            const visAvailable = visual.available;
+            const visStatusMsg = document.getElementById('visualStatusMsg');
+            visStatusMsg.innerText = visual.status_message || '';
+
+            const faces = visual.faces || {};
+            document.getElementById('faceCountBadge').innerText = faces.count || 0;
+            document.getElementById('faceStatusText').innerText = faces.detected ? `${faces.count} face(s) visually detected` : 'No faces detected';
+
+            const qr = visual.qr_codes || {};
+            document.getElementById('qrCountBadge').innerText = qr.count || 0;
+            document.getElementById('qrStatusText').innerText = qr.detected ? `${qr.count} code(s) detected` : 'None detected';
+
+            const bc = visual.barcodes || {};
+            document.getElementById('barcodeCountBadge').innerText = bc.count || 0;
+            document.getElementById('barcodeStatusText').innerText = bc.detected ? `${bc.count} barcode(s) detected` : 'None detected';
+
+            const txt = visual.text || {};
+            document.getElementById('ocrCountBadge').innerText = txt.detected ? 'Text Found' : 'Clean';
+            document.getElementById('ocrStatusText').innerText = txt.detected ? (txt.details || 'Text detected') : 'None detected';
+
+            // Payloads Box
+            const payloadsBox = document.getElementById('visualPayloadsBox');
+            const payloadsList = document.getElementById('visualPayloadsList');
+            payloadsList.innerHTML = '';
+            let hasPayloads = false;
+
+            if (qr.payloads && qr.payloads.length > 0) {
+                hasPayloads = true;
+                qr.payloads.forEach(p => {
+                    payloadsList.innerHTML += `<div><span class="text-cyan-400 font-bold">[QR]:</span> ${p}</div>`;
+                });
+            }
+            if (bc.payloads && bc.payloads.length > 0) {
+                hasPayloads = true;
+                bc.payloads.forEach(b => {
+                    payloadsList.innerHTML += `<div><span class="text-amber-400 font-bold">[BARCODE ${b.type}]:</span> ${b.data}</div>`;
+                });
+            }
+            if (txt.samples && txt.samples.length > 0) {
+                hasPayloads = true;
+                payloadsList.innerHTML += `<div><span class="text-indigo-400 font-bold">[OCR TEXT]:</span> "${txt.samples.join(' ')}"</div>`;
+            }
+
+            if (hasPayloads) {
+                payloadsBox.classList.remove('hidden');
+            } else {
+                payloadsBox.classList.add('hidden');
+            }
+
+            // 5. Findings Table
+            const tbody = document.getElementById('findingsTableBody');
+            tbody.innerHTML = '';
+            const findings = risk.findings || [];
+            document.getElementById('findingsCount').innerText = `${findings.length} Findings`;
+
+            if (findings.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="p-6 text-center text-slate-400 italic">No sensitive metadata or forensic vectors identified in this target.</td></tr>`;
+            } else {
+                findings.forEach(f => {
+                    let sevBadgeClass = 'bg-slate-800 text-slate-300';
+                    if (f.severity === 'CRITICAL') sevBadgeClass = 'bg-red-950 text-red-400 border border-red-800 font-bold';
+                    else if (f.severity === 'HIGH') sevBadgeClass = 'bg-orange-950 text-orange-400 border border-orange-800 font-semibold';
+                    else if (f.severity === 'MEDIUM') sevBadgeClass = 'bg-yellow-950 text-yellow-400 border border-yellow-800';
+
+                    let valDisp = String(f.value);
+                    if (valDisp.length > 55) valDisp = valDisp.substring(0, 52) + '...';
+
+                    tbody.innerHTML += `
+                        <tr class="hover:bg-slate-900/50 transition-colors">
+                            <td class="p-4 font-semibold text-cyan-300 console-font text-xs">${f.category}</td>
+                            <td class="p-4 text-slate-200 font-medium break-all" title="${f.value}">${valDisp}</td>
+                            <td class="p-4">
+                                <span class="px-2 py-0.5 rounded text-[11px] console-font ${sevBadgeClass}">${f.severity} (+${f.contribution || 0})</span>
+                            </td>
+                            <td class="p-4 text-xs leading-relaxed text-slate-300">
+                                <p class="text-slate-300 mb-1">${f.explanation}</p>
+                                <p class="text-emerald-400 font-medium flex items-center gap-1">
+                                    <svg class="w-3.5 h-3.5 inline flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>
+                                    ${f.recommendation || 'Sanitize metadata prior to publishing.'}
+                                </p>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+
+            // 6. Comprehensive Metadata Cards
+            const cam = norm.camera || {};
+            const time = norm.timestamp || {};
+            const auth = norm.author_copyright || {};
+            const exp = norm.exposure || {};
+            const tech = norm.technical || {};
+            const iptc = metadata.iptc || {};
+            const xmp = metadata.xmp || {};
+
+            document.getElementById('metaMakeModel').innerText = (cam.make && cam.make !== 'Not found') ? `${cam.make} ${cam.model || ''}` : 'Not found';
+            document.getElementById('metaLens').innerText = cam.lens_model || 'Not found';
+            document.getElementById('metaSerial').innerText = cam.body_serial_number || 'Not found';
+            document.getElementById('metaSoftware').innerText = cam.software || xmp.software || 'Not found';
+
+            document.getElementById('metaDateOriginal').innerText = time.datetime_original || 'Not found';
+            document.getElementById('metaDateDigitized').innerText = time.datetime_digitized || 'Not found';
+            document.getElementById('metaDateModified').innerText = time.datetime || 'Not found';
+            document.getElementById('metaTimezone').innerText = time.timezone_offset || 'Not found';
+
+            document.getElementById('metaAuthor').innerText = auth.artist || iptc.author || xmp.creator || 'Not found';
+            document.getElementById('metaCopyright').innerText = auth.copyright || iptc.copyright || xmp.copyright || 'Not found';
+            const iptcLoc = [iptc.city, iptc.country].filter(x => x && x !== 'Not found').join(', ');
+            document.getElementById('metaIptcLocation').innerText = iptcLoc || 'Not found';
+            document.getElementById('metaCaption').innerText = iptc.caption || 'Not found';
+
+            const expParts = [exp.exposure_time, exp.f_number, exp.iso ? `ISO ${exp.iso}` : null].filter(Boolean);
+            document.getElementById('metaExposure').innerText = expParts.length ? expParts.join(', ') : 'Not found';
+            document.getElementById('metaFocal').innerText = exp.focal_length || 'Not found';
+            document.getElementById('metaOrientation').innerText = tech.orientation || 'Not found';
+            document.getElementById('metaXmpDocId').innerText = xmp.document_id || 'Not found';
+
+            // 7. Actionable Recommendations List
+            const recList = document.getElementById('recommendationsList');
+            recList.innerHTML = '';
+            const recs = risk.recommendations || [];
+            if (recs.length === 0) {
+                recList.innerHTML = '<li class="text-slate-500 italic">No specific remediation actions required for this image.</li>';
+            } else {
+                recs.forEach(r => {
+                    recList.innerHTML += `
+                        <li class="flex items-start gap-2">
+                            <span class="text-cyan-400 mt-0.5">&bull;</span>
+                            <span>${r}</span>
+                        </li>
+                    `;
+                });
+            }
+        }
+
+        function initOrUpdateMap(lat, lon) {
+            const mapContainer = document.getElementById('leafletMap');
+            if (!window.L) {
+                mapContainer.innerHTML = '<div class="p-6 text-center text-slate-500 text-xs">Offline mapping display: Interactive Leaflet library not loaded. Coordinates are recorded above.</div>';
+                return;
+            }
+
+            try {
+                if (!leafletMapInstance) {
+                    leafletMapInstance = L.map('leafletMap').setView([lat, lon], 14);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        maxZoom: 19,
+                        attribution: '&copy; OpenStreetMap'
+                    }).addTo(leafletMapInstance);
+                    leafletMarkerInstance = L.marker([lat, lon]).addTo(leafletMapInstance)
+                        .bindPopup(`<b>Target Coordinates</b><br/>${lat.toFixed(6)}, ${lon.toFixed(6)}`)
+                        .openPopup();
+                } else {
+                    leafletMapInstance.setView([lat, lon], 14);
+                    if (leafletMarkerInstance) {
+                        leafletMarkerInstance.setLatLng([lat, lon])
+                            .bindPopup(`<b>Target Coordinates</b><br/>${lat.toFixed(6)}, ${lon.toFixed(6)}`)
+                            .openPopup();
+                    } else {
+                        leafletMarkerInstance = L.marker([lat, lon]).addTo(leafletMapInstance);
+                    }
+                    leafletMapInstance.invalidateSize();
+                }
+            } catch (err) {
+                console.warn('Map initialization error:', err);
+            }
+        }
+
+        async function sanitizeTarget() {
+            if (!currentFilename) return;
+            
+            const btn = document.getElementById('btnSanitize');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<svg class="animate-spin h-4 w-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Sanitizing Headers...';
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('/sanitize', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: currentFilename })
+                });
+                const data = await response.json();
+                
+                if (data.error) {
+                    alert('Sanitization failed: ' + data.error);
+                    return;
+                }
+
+                // Show Comparison Section
+                const compareSection = document.getElementById('compareSection');
+                compareSection.classList.remove('hidden');
+                
+                const comp = data.comparison || {};
+                const orig = comp.original || {};
+                const clean = comp.cleaned || {};
+
+                document.getElementById('compOrigScoreBadge').innerText = `Score: ${orig.risk?.score || 0} (${orig.risk?.level || 'N/A'})`;
+                document.getElementById('compOrigCount').innerText = `${(orig.risk?.findings || []).length} findings`;
+                document.getElementById('compOrigSha').innerText = comp.original_sha256 || 'N/A';
+
+                document.getElementById('compCleanScoreBadge').innerText = `Score: ${clean.risk?.score || 0} (${clean.risk?.level || 'N/A'})`;
+                document.getElementById('compCleanCount').innerText = `${(clean.risk?.findings || []).length} findings`;
+                document.getElementById('compCleanSha').innerText = comp.cleaned_sha256 || 'N/A';
+
+                // Removed fields list
+                const removedContainer = document.getElementById('removedFieldsList');
+                removedContainer.innerHTML = '';
+                const removedFields = comp.removed_fields || [];
+                if (removedFields.length === 0) {
+                    removedContainer.innerHTML = '<span class="text-slate-500 italic">No existing metadata fields were stripped.</span>';
+                } else {
+                    removedFields.forEach(field => {
+                        removedContainer.innerHTML += `
+                            <span class="px-2.5 py-1 rounded bg-slate-800 text-emerald-400 border border-emerald-900/60 flex items-center gap-1.5">
+                                <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                ${field}: Removed
+                            </span>
+                        `;
+                    });
+                }
+
+                // Download link for sanitized image
+                document.getElementById('btnDownloadClean').href = '/cleaned/' + data.clean_filename;
+
+                // Update report links
+                if (data.pdf_report) document.getElementById('btnPdfReport').href = data.pdf_report;
+                if (data.json_report) document.getElementById('btnJsonReport').href = data.json_report;
+
+                // Scroll to comparison section
+                compareSection.scrollIntoView({ behavior: 'smooth' });
+
+            } catch (err) {
+                alert('Sanitization request failed: ' + err.message);
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>

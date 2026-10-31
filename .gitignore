@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+images/*
+!images/.gitkeep
+cleaned/*
+!cleaned/.gitkeep
+reports/*
+!reports/.gitkeep
+.DS_Store
